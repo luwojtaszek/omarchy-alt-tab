@@ -30,6 +30,29 @@ shots above are the stock Tokyo Night and Catppuccin Latte, untouched.
 omarchy plugin add https://github.com/luwojtaszek/omarchy-alt-tab.git --enable
 ```
 
+## Update
+
+```bash
+omarchy plugin update io.github.luwojtaszek.alt-tab
+```
+
+## Remove
+
+```bash
+omarchy plugin remove io.github.luwojtaszek.alt-tab
+```
+
+Nothing is left behind. The plugin never writes to your Hyprland config:
+its keybindings are registered dynamically at runtime, so they are gone
+with the next config reload (`hyprctl reload`, or your next login). The
+only file it can read, `~/.config/omarchy/alt-tab.json`, is one you
+create yourself — delete it if you made one. If you bound the switcher by
+hand in your own Hyprland config, remove those lines too.
+
+To keep the plugin but stop it from touching your keymap, disable it with
+`omarchy plugin disable io.github.luwojtaszek.alt-tab`, or set
+`{"autoBinds": false}` (see below).
+
 ## Keybindings
 
 **They work out of the box.** A small service inside the plugin registers
