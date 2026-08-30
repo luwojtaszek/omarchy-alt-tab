@@ -42,16 +42,48 @@ Hyprland config reload):
 | ``Alt+` `` / ``Alt+Shift+` `` | switch windows of the same app |
 
 The service is polite about it, per combo: a combo you bound yourself in
-your config is left alone (your bind wins); only unbound combos and the
-stock Omarchy `Alt+Tab` cycle binds are taken over. Opt out entirely with:
+your Hyprland config is left alone (your bind wins); only unbound combos
+and the stock Omarchy `Alt+Tab` cycle binds are taken over.
 
-```bash
-echo '{"autoBinds": false}' > ~/.config/omarchy/alt-tab.json
+### Making them yours
+
+Everything is steered from `~/.config/omarchy/alt-tab.json`.
+
+**Another modifier** — the whole default set on `Super` instead of `Alt`
+(the switcher then commits on the `Super` release, so this stays a
+hold-and-cycle switcher):
+
+```json
+{ "modifier": "SUPER" }
 ```
 
-To customize combos or payloads (e.g. `Ctrl+Alt+Tab` for the
-same-workspace mode, or the `bare` variant), bind them yourself — your
-binds automatically win over the defaults. Omarchy (Lua config):
+**Your own combos** — replaces the defaults entirely. Each entry takes a
+`combo`, an optional `payload` (same keys as the summon payload below)
+and an optional `description`:
+
+```json
+{
+  "binds": [
+    { "combo": "SUPER + TAB", "payload": { "dir": "next" } },
+    { "combo": "SUPER + SHIFT + TAB", "payload": { "dir": "prev" } },
+    { "combo": "SUPER + GRAVE", "payload": { "dir": "next", "mode": "sameclass" } },
+    { "combo": "CTRL + ALT + TAB", "payload": { "dir": "next", "mode": "sameworkspace" } }
+  ]
+}
+```
+
+A combo you list here is always registered — asking for it in this file
+is your decision, so it takes over whatever was on that combo.
+
+**No automatic binds at all** — bind the switcher yourself in your
+Hyprland config:
+
+```json
+{ "autoBinds": false }
+```
+
+Binding it by hand works too, with or without `autoBinds`: your Hyprland
+config always wins over the defaults. Omarchy (Lua config):
 
 ```lua
 o.bind("ALT + TAB", "Window switcher",

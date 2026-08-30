@@ -1,35 +1,69 @@
 #!/bin/bash
-# Registers the switcher's default keybindings, run by Service.qml at shell
-# startup and after every Hyprland config reload (dynamic binds don't survive
-# a reload). Per combo:
-#   - already carrying our description        -> leave as is
-#   - unbound                                 -> bind
-#   - bound only to known stock Omarchy binds -> take over (unbind + bind)
-#   - bound to anything else (user's own)     -> leave the user in charge
-# Opt out entirely with ~/.config/omarchy/alt-tab.json: {"autoBinds": false}
+# Registers the switcher's keybindings. Run by Service.qml at shell startup
+# and after every Hyprland config reload, since dynamic binds don't survive a
+# reload.
+#
+# Settings live in ~/.config/omarchy/alt-tab.json:
+#   {"autoBinds": false}            -> register nothing, ever
+#   {"modifier": "SUPER"}           -> same defaults on another modifier
+#   {"binds": [ {"combo": "...", "payload": {...}, "description": "..."} ]}
+#                                   -> replace the defaults entirely
+#
+# Policy per combo:
+#   already ours                        -> leave as is (idempotent)
+#   unbound                             -> bind
+#   only known stock Omarchy cycle binds-> take over
+#   anything else (a bind of your own)  -> leave alone; your config wins
+# Combos listed explicitly in `binds` are always taken over: asking for them
+# in this file IS the user's decision.
 set -uo pipefail
 
 SETTINGS="$HOME/.config/omarchy/alt-tab.json"
-if [[ -f $SETTINGS ]] && command -v jq >/dev/null \
-  && [[ $(jq -r '.autoBinds != false' "$SETTINGS" 2>/dev/null) == "false" ]]; then
-  logger -t alt-tab-binds "autoBinds disabled in alt-tab.json"
-  exit 0
-fi
+PLUGIN_ID="io.github.luwojtaszek.alt-tab"
+SUMMON="omarchy-shell shell summon $PLUGIN_ID"
 
-SUMMON="omarchy-shell shell summon io.github.luwojtaszek.alt-tab"
+# Stock Omarchy binds we are willing to replace on a default combo.
+STOCK_DESCS='Focus on next window
+Focus on previous window
+Reveal active window on top
+Focus on next monitor
+Focus on previous monitor'
+
+setting() { # $1=jq filter, $2=fallback
+  local v
+  [[ -f $SETTINGS ]] && command -v jq >/dev/null || { echo "$2"; return; }
+  v=$(jq -r "$1 // empty" "$SETTINGS" 2>/dev/null) || v=""
+  [[ -n $v && $v != "null" ]] && echo "$v" || echo "$2"
+}
+
+[[ $(setting '.autoBinds' true) == false ]] && { logger -t alt-tab-binds "autoBinds disabled"; exit 0; }
+
+MODIFIER=$(setting '.modifier' ALT); MODIFIER=${MODIFIER^^}
+MOD_LOWER=${MODIFIER,,}
+
 BINDS=$(hyprctl binds 2>/dev/null) || exit 0
 if hyprctl dispatch 'hl.dsp.no_op()' 2>/dev/null | grep -q '^ok'; then LUA=1; else LUA=0; fi
 
-# combo|modmask|key|our description|payload|takeover descriptions (;-separated)
-TABLE=$(cat <<'EOF'
-ALT + TAB|8|TAB|Alt-Tab Switcher: next|{"dir":"next"}|Focus on next window;Reveal active window on top
-ALT + SHIFT + TAB|9|TAB|Alt-Tab Switcher: prev|{"dir":"prev"}|Focus on previous window
-ALT + GRAVE|8|GRAVE|Alt-Tab Switcher: same app|{"dir":"next","mode":"sameclass"}|
-ALT + SHIFT + GRAVE|9|GRAVE|Alt-Tab Switcher: same app prev|{"dir":"prev","mode":"sameclass"}|
-EOF
-)
+# combo -> Hyprland modmask / key name, so existing binds can be looked up.
+combo_modmask() {
+  local m=0 tok
+  for tok in ${1//+/ }; do
+    case "${tok^^}" in
+      SHIFT) ((m |= 1)) ;;
+      CAPS|CAPSLOCK) ((m |= 2)) ;;
+      CTRL|CONTROL) ((m |= 4)) ;;
+      ALT|MOD1) ((m |= 8)) ;;
+      MOD2) ((m |= 16)) ;;
+      MOD3) ((m |= 32)) ;;
+      SUPER|MOD4|WIN|LOGO) ((m |= 64)) ;;
+      MOD5) ((m |= 128)) ;;
+    esac
+  done
+  echo "$m"
+}
+combo_key() { local t last; for t in ${1//+/ }; do last=$t; done; echo "${last^^}"; }
 
-# All descriptions bound on a given modmask+key, one per line.
+# All descriptions currently bound on a modmask+key, one per line.
 combo_descs() {
   awk -v m="$1" -v k="$2" '
     BEGIN { RS=""; FS="\n" }
@@ -45,36 +79,76 @@ combo_descs() {
     }' <<<"$BINDS"
 }
 
-while IFS='|' read -r combo modmask key desc payload takeover; do
-  [[ -z $combo ]] && continue
-  descs=$(combo_descs "$modmask" "$key")
-  if grep -qxF "$desc" <<<"$descs"; then
-    continue # already ours
+# Work list: "combo|description|payload|force", one per line.
+plan() {
+  local custom
+  custom=$(jq -c '.binds[]? | select(.combo)' "$SETTINGS" 2>/dev/null)
+  if [[ -n ${custom:-} ]]; then
+    while IFS= read -r entry; do
+      local combo payload desc
+      combo=$(jq -r '.combo' <<<"$entry")
+      payload=$(jq -c '.payload // {"dir":"next"}' <<<"$entry")
+      desc=$(jq -r '.description // empty' <<<"$entry")
+      [[ -z $desc ]] && desc="Alt-Tab Switcher: $combo"
+      printf '%s|%s|%s|1\n' "$combo" "$desc" "$payload"
+    done <<<"$custom"
+    return
   fi
+  # Defaults, on MODIFIER. Non-ALT modifiers are passed to the switcher too,
+  # so it watches the right key for the release that commits the selection.
+  local extra=""
+  [[ $MODIFIER != ALT ]] && extra=",\"modifier\":\"$MOD_LOWER\""
+  cat <<EOF
+$MODIFIER + TAB|Alt-Tab Switcher: next|{"dir":"next"$extra}|0
+$MODIFIER + SHIFT + TAB|Alt-Tab Switcher: prev|{"dir":"prev"$extra}|0
+$MODIFIER + GRAVE|Alt-Tab Switcher: same app|{"dir":"next","mode":"sameclass"$extra}|0
+$MODIFIER + SHIFT + GRAVE|Alt-Tab Switcher: same app prev|{"dir":"prev","mode":"sameclass"$extra}|0
+EOF
+}
+
+classic_combo() { # "SUPER + SHIFT + TAB" -> "SUPER SHIFT,Tab"
+  local key mods=() tok
+  key=$(combo_key "$1")
+  for tok in ${1//+/ }; do
+    case "${tok^^}" in TAB|GRAVE|SPACE|ESCAPE) ;; *) mods+=("${tok^^}") ;; esac
+  done
+  case $key in TAB) key=Tab ;; GRAVE) key=grave ;; SPACE) key=space ;; esac
+  echo "${mods[*]},$key"
+}
+
+while IFS='|' read -r combo desc payload force; do
+  [[ -z ${combo:-} ]] && continue
+  modmask=$(combo_modmask "$combo")
+  key=$(combo_key "$combo")
+  descs=$(combo_descs "$modmask" "$key")
+
+  grep -qxF "$desc" <<<"$descs" && continue # already ours
+
   action="bind"
   if [[ -n $descs ]]; then
     action="takeover"
-    while IFS= read -r d; do
-      [[ -z $d ]] && continue
-      if ! grep -qxF "$d" <<<"${takeover//;/$'\n'}"; then
-        action="skip"; break
-      fi
-    done <<<"$descs"
+    if [[ $force != 1 ]]; then
+      while IFS= read -r d; do
+        [[ -z $d ]] && continue
+        grep -qxF "$d" <<<"$STOCK_DESCS" || { action="skip"; break; }
+      done <<<"$descs"
+    fi
   fi
-  if [[ $action == "skip" ]]; then
-    logger -t alt-tab-binds "leaving user bind on $combo alone"
+
+  if [[ $action == skip ]]; then
+    logger -t alt-tab-binds "leaving your own bind on $combo alone"
     continue
   fi
+
   if (( LUA )); then
-    [[ $action == "takeover" ]] && hyprctl eval "hl.unbind(\"$combo\")" >/dev/null
+    [[ $action == takeover ]] && hyprctl eval "hl.unbind(\"$combo\")" >/dev/null
     hyprctl eval "o.bind(\"$combo\", \"$desc\", [[$SUMMON '$payload']])" >/dev/null \
       && logger -t alt-tab-binds "$action $combo -> $desc"
   else
-    classic="${combo//ALT + SHIFT/ALT SHIFT}"; classic="${classic// + /,}"
-    classic="${classic/GRAVE/grave}"; classic="${classic/TAB/Tab}"
-    [[ $action == "takeover" ]] && hyprctl keyword unbind "$classic" >/dev/null
+    classic=$(classic_combo "$combo")
+    [[ $action == takeover ]] && hyprctl keyword unbind "$classic" >/dev/null
     hyprctl keyword bind "$classic,exec,$SUMMON '$payload'" >/dev/null \
       && logger -t alt-tab-binds "$action $combo -> $desc (classic)"
   fi
-done <<<"$TABLE"
+done < <(plan)
 exit 0

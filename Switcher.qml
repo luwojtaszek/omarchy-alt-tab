@@ -41,6 +41,7 @@ Item {
   property bool luaDispatchMode: false
   property bool revealed: false       // show-delay gate: a quick tap never renders
   property bool holdOpen: false       // demo/debug: stay open, ignore Alt release
+  property string modifier: "alt"     // key whose release commits: "alt" or "super"
 
   readonly property bool multiWorkspace: {
     var seen = {}
@@ -82,6 +83,10 @@ Item {
       // {"hold": true} keeps the switcher up regardless of the Alt state —
       // for screenshots, demos and debugging.
       holdOpen = payload.hold === true
+      // Which modifier the summoning bind holds; its release commits the
+      // selection. Keep in sync with the bind (the bind writer does this
+      // through alt-tab.json's "modifier").
+      modifier = payload.modifier === "super" ? "super" : "alt"
       refClass = ""
       opened = true
       sticky = false
@@ -277,7 +282,7 @@ Item {
   }
   Process {
     id: altPollProc
-    command: [root.altHeldHelper, "alt"]
+    command: [root.altHeldHelper, root.modifier]
     stdout: StdioCollector {
       onStreamFinished: {
         if (root.opened && !root.sticky && text.indexOf("UP") >= 0) root.activate()
@@ -618,7 +623,10 @@ Item {
       // compositor delivers the release here — the primary activation path.
       // Typing latches sticky mode; then only Enter/Escape close.
       Keys.onReleased: function (event) {
-        if (event.key === Qt.Key_Alt && !root.sticky && !root.holdOpen) {
+        var isModifier = root.modifier === "super"
+          ? (event.key === Qt.Key_Super_L || event.key === Qt.Key_Super_R || event.key === Qt.Key_Meta)
+          : event.key === Qt.Key_Alt
+        if (isModifier && !root.sticky && !root.holdOpen) {
           if (root.listLoaded) root.activate()
           else root.pendingActivate = true
           event.accepted = true
