@@ -27,8 +27,26 @@ omarchy plugin add https://github.com/luwojtaszek/omarchy-alt-tab.git --enable
 
 ## Keybindings
 
-The plugin does not register keybindings itself — add these to your Hyprland
-config. Omarchy (Lua config):
+**They work out of the box.** A small service inside the plugin registers
+these bindings when the shell starts (and re-registers them after every
+Hyprland config reload):
+
+| Combo | Action |
+|---|---|
+| `Alt+Tab` / `Alt+Shift+Tab` | switch windows (MRU) |
+| ``Alt+` `` / ``Alt+Shift+` `` | switch windows of the same app |
+
+The service is polite about it, per combo: a combo you bound yourself in
+your config is left alone (your bind wins); only unbound combos and the
+stock Omarchy `Alt+Tab` cycle binds are taken over. Opt out entirely with:
+
+```bash
+echo '{"autoBinds": false}' > ~/.config/omarchy/alt-tab.json
+```
+
+To customize combos or payloads (e.g. `Ctrl+Alt+Tab` for the
+same-workspace mode, or the `bare` variant), bind them yourself — your
+binds automatically win over the defaults. Omarchy (Lua config):
 
 ```lua
 o.bind("ALT + TAB", "Window switcher",
