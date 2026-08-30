@@ -64,6 +64,17 @@ Options are passed in the summon payload:
 |---|---|---|---|
 | `dir` | `next`, `prev` | `next` | initial / repeated cycle direction |
 | `variant` | `two-line`, `bare` | `two-line` | visual style |
+| `mode` | `all`, `sameclass`, `sameworkspace` | `all` | which windows to list |
+
+`sameclass` lists only windows of the active window's app — bind it to
+``Alt+` `` for the macOS ``Cmd+` `` feel. `sameworkspace` lists only the
+active window's workspace. The mode is locked in by the summon that opens
+the switcher; repeated summons just cycle.
+
+```lua
+o.bind("ALT + GRAVE", "Same-app switcher",
+  "omarchy-shell shell summon io.github.luwojtaszek.alt-tab '{\"dir\":\"next\",\"mode\":\"sameclass\"}'")
+```
 
 Example — the `bare` variant:
 

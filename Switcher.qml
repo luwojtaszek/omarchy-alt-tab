@@ -28,6 +28,8 @@ Item {
 
   // ── State ──────────────────────────────────────────────────────────
   property string variant: "two-line" // or "bare"
+  property string mode: "all"         // "sameclass" (Cmd+` style) / "sameworkspace"
+  property string refClass: ""        // class the sameclass filter locked onto
   property var windows: []            // MRU-ordered clients (parsed hyprctl JSON)
   property var visibleWindows: []     // windows matching the filter
   property string filterText: ""
@@ -72,6 +74,11 @@ Item {
     var dir = payload.dir === "prev" ? -1 : 1
 
     if (!opened) {
+      // The mode is locked in by the summon that opens the switcher;
+      // repeated summons only cycle.
+      mode = (payload.mode === "sameclass" || payload.mode === "sameworkspace")
+        ? payload.mode : "all"
+      refClass = ""
       opened = true
       sticky = false
       revealed = false
@@ -104,6 +111,17 @@ Item {
       if (c.mapped && c.workspace && c.workspace.id > 0) list.push(c)
     }
     list.sort(function (a, b) { return a.focusHistoryID - b.focusHistoryID })
+    // sameclass / sameworkspace: narrow the list relative to the active
+    // window (MRU[0]), like macOS Cmd+`.
+    if (mode !== "all" && list.length > 0) {
+      var ref = list[0]
+      refClass = ref.class || ""
+      list = list.filter(function (c) {
+        return mode === "sameclass"
+          ? c.class === ref.class
+          : c.workspace.id === ref.workspace.id
+      })
+    }
     windows = list
     applyFilter()
     listLoaded = true
@@ -260,7 +278,11 @@ Item {
               font.weight: Font.Bold
             }
             Text {
-              text: root.filterText === "" ? "filter windows" : root.filterText
+              text: root.filterText !== "" ? root.filterText
+                : root.mode === "sameclass" && root.refClass !== ""
+                  ? "filter " + root.appDisplayName(root.refClass).toLowerCase() + " windows"
+                  : root.mode === "sameworkspace" ? "filter workspace windows"
+                  : "filter windows"
               color: root.filterText === "" ? root.dim2 : root.themeFg
               font.family: root.fontFamily
               font.pixelSize: 13
