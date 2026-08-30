@@ -160,15 +160,28 @@ Item {
   // ── Activation ─────────────────────────────────────────────────────
   property string pendingFocusAddress: ""
 
+  function dispatchFocus(addr) {
+    // Focus AND raise — in a floating-heavy layout focuswindow alone
+    // leaves the window buried under others.
+    if (luaDispatchMode) {
+      Hyprland.dispatch('hl.dsp.focus({ window = "address:' + addr + '" })')
+      Hyprland.dispatch("hl.dsp.window.bring_to_top()")
+    } else {
+      Hyprland.dispatch("focuswindow address:" + addr)
+      Hyprland.dispatch("alterzorder top")
+    }
+  }
+
   function activate() {
     var target = visibleWindows[selectedIndex]
     dismiss()
     if (!target) return
     // Hyprland restores keyboard focus when an exclusive-focus layer
-    // unmaps, and that restore ALWAYS races (and often overrides) any
-    // focus dispatched while the layer is still up. So: unmap first, let
-    // the restore land, then focus AND raise the target — in a
-    // floating-heavy layout focuswindow alone leaves the window buried.
+    // unmaps, and that restore races — and can override — a focus
+    // dispatched while the layer is still up. Dispatch immediately for an
+    // instant visual switch, then once more after the restore has landed
+    // to make the result stick.
+    dispatchFocus(target.address)
     pendingFocusAddress = target.address
     focusTimer.restart()
   }
@@ -180,13 +193,7 @@ Item {
       var addr = root.pendingFocusAddress
       if (addr === "") return
       root.pendingFocusAddress = ""
-      if (root.luaDispatchMode) {
-        Hyprland.dispatch('hl.dsp.focus({ window = "address:' + addr + '" })')
-        Hyprland.dispatch("hl.dsp.window.bring_to_top()")
-      } else {
-        Hyprland.dispatch("focuswindow address:" + addr)
-        Hyprland.dispatch("alterzorder top")
-      }
+      root.dispatchFocus(addr)
     }
   }
 
@@ -242,7 +249,10 @@ Item {
   // the Alt release just commits the pending selection unseen.
   Timer {
     id: revealTimer
-    interval: 150
+    // Tuned so a human quick tap (Alt released ~200ms after the press)
+    // switches without the switcher ever appearing; the GTK predecessor
+    // hit a similar effective threshold through process-startup latency.
+    interval: 250
     onTriggered: root.revealed = true
   }
 
