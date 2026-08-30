@@ -2,10 +2,10 @@
   "schemaVersion": 1,
   "id": "io.github.luwojtaszek.alt-tab",
   "name": "Alt-Tab Switcher",
-  "version": "0.2.0",
+  "version": "1.0.0",
   "author": "Lukasz Wojtaszek",
   "license": "MIT",
-  "description": "macOS-style Alt-Tab window switcher: MRU list, type-to-filter, theme-native. Release Alt to focus the selected window.",
+  "description": "macOS-style Alt-Tab window switcher: MRU order, hold-and-cycle, type-to-filter, same-app and same-workspace modes. Follows your Omarchy theme; binds itself out of the box.",
   "kinds": [
     "menu",
     "service"
