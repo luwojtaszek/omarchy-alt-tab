@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "io.github.luwojtaszek.alt-tab",
+  "name": "Alt-Tab Switcher",
+  "version": "0.1.0",
+  "author": "Lukasz Wojtaszek",
+  "license": "MIT",
+  "description": "macOS-style Alt-Tab window switcher: MRU list, type-to-filter, theme-native. Release Alt to focus the selected window.",
+  "kinds": ["menu"],
+  "keepLoaded": true,
+  "entryPoints": { "menu": "Switcher.qml" }
+}
