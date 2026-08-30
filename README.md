@@ -196,8 +196,18 @@ focused surface as an ordinary key event.
 - Window list: `hyprctl -j clients`, sorted by `focusHistoryID`.
 - Focusing: Hyprland `focuswindow` dispatch. Both classic and Lua-config
   Hyprland dispatch syntax are supported (probed once at startup).
-- No daemons, no root, no extra packages. Runs unsandboxed inside the shell
-  process with your user permissions, like every Omarchy shell plugin.
+- No daemons, no root, no packages to install. Runs unsandboxed inside the
+  shell process with your user permissions, like every Omarchy shell plugin.
+- Uses only what Omarchy already ships: `hyprctl`, `jq` and `logger` (the
+  last two solely for the keybinding service).
+- **Optional**, used only if it happens to be on your `PATH`:
+  `hyprfloat-alt-held` (from [hyprfloat](https://github.com/yz778/hyprfloat)),
+  a helper that reads the physical modifier state from evdev. When present,
+  it is polled while the switcher is open as a backup for a modifier release
+  that never reached the surface — which can happen on a very fast tap, where
+  the key goes up before the switcher has keyboard focus. Without it that rare
+  case simply leaves the switcher open, and `Enter` or `Escape` closes it.
+  Nothing else changes, and the helper is never installed or required.
 - Typography follows the Omarchy brand font: JetBrains Mono. With only the
   stock `ttf-jetbrains-mono-nerd-basic` installed the Light/Medium weights
   render as Regular; install `ttf-jetbrains-mono` for the full effect.
