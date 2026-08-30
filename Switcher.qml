@@ -158,14 +158,36 @@ Item {
   }
 
   // ── Activation ─────────────────────────────────────────────────────
+  property string pendingFocusAddress: ""
+
   function activate() {
     var target = visibleWindows[selectedIndex]
     dismiss()
     if (!target) return
-    if (luaDispatchMode)
-      Hyprland.dispatch('hl.dsp.focus({ window = "address:' + target.address + '" })')
-    else
-      Hyprland.dispatch("focuswindow address:" + target.address)
+    // Hyprland restores keyboard focus when an exclusive-focus layer
+    // unmaps, and that restore ALWAYS races (and often overrides) any
+    // focus dispatched while the layer is still up. So: unmap first, let
+    // the restore land, then focus AND raise the target — in a
+    // floating-heavy layout focuswindow alone leaves the window buried.
+    pendingFocusAddress = target.address
+    focusTimer.restart()
+  }
+
+  Timer {
+    id: focusTimer
+    interval: 100
+    onTriggered: {
+      var addr = root.pendingFocusAddress
+      if (addr === "") return
+      root.pendingFocusAddress = ""
+      if (root.luaDispatchMode) {
+        Hyprland.dispatch('hl.dsp.focus({ window = "address:' + addr + '" })')
+        Hyprland.dispatch("hl.dsp.window.bring_to_top()")
+      } else {
+        Hyprland.dispatch("focuswindow address:" + addr)
+        Hyprland.dispatch("alterzorder top")
+      }
+    }
   }
 
   function dismiss() {
@@ -222,6 +244,35 @@ Item {
     id: revealTimer
     interval: 150
     onTriggered: root.revealed = true
+  }
+
+  // Backup activation path: the Qt key event covers the normal case, but a
+  // release that lands before this surface has keyboard focus is lost. When
+  // the optional hyprfloat-alt-held helper is installed (reads evdev key
+  // state), poll the physical Alt while open and commit once it reads UP.
+  // Without the helper the poll never arms and Esc/Enter remain the way out.
+  property string altHeldHelper: ""
+  Process {
+    id: helperProbe
+    command: ["sh", "-c", "command -v hyprfloat-alt-held || true"]
+    running: true
+    stdout: StdioCollector { onStreamFinished: root.altHeldHelper = text.trim() }
+  }
+  Process {
+    id: altPollProc
+    command: [root.altHeldHelper, "alt"]
+    stdout: StdioCollector {
+      onStreamFinished: {
+        if (root.opened && !root.sticky && text.indexOf("UP") >= 0) root.activate()
+      }
+    }
+  }
+  Timer {
+    id: altPollTimer
+    interval: 350
+    repeat: true
+    running: root.opened && root.revealed && !root.sticky && root.altHeldHelper !== ""
+    onTriggered: if (!altPollProc.running) altPollProc.running = true
   }
 
   // ── UI ─────────────────────────────────────────────────────────────
