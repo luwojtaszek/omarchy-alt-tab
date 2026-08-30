@@ -40,6 +40,7 @@ Hyprland config reload):
 |---|---|
 | `Alt+Tab` / `Alt+Shift+Tab` | switch windows (MRU) |
 | ``Alt+` `` / ``Alt+Shift+` `` | switch windows of the same app |
+| ``Ctrl+Alt+` `` / ``Ctrl+Alt+Shift+` `` | switch windows on the current workspace |
 
 The service is polite about it, per combo: a combo you bound yourself in
 your Hyprland config is left alone (your bind wins); only unbound combos
@@ -77,7 +78,25 @@ and an optional `description`:
 ```
 
 A combo you list here is always registered — asking for it in this file
-is your decision, so it takes over whatever was on that combo.
+is your decision, so it takes over whatever was on that combo. Any
+modifier combination and any key Hyprland accepts will do.
+
+One rule follows from how the switcher works: it commits the selection
+when you *release* the modifier, so the combo has to hold `Alt` or
+`Super`, and the payload's `modifier` must name the one you used. For a
+combo that holds neither — a function key, say — set `"modifier": "none"`
+and the switcher behaves as a picker instead: it opens immediately and
+stays up until `Enter` or `Escape`.
+
+```json
+{
+  "binds": [
+    { "combo": "SUPER + TAB", "payload": { "dir": "next", "modifier": "super" } },
+    { "combo": "CTRL + F1",   "payload": { "dir": "next", "modifier": "none" },
+      "description": "Window picker" }
+  ]
+}
+```
 
 **No automatic binds at all** — bind the switcher yourself in your
 Hyprland config:
@@ -124,6 +143,7 @@ Options are passed in the summon payload:
 | `dir` | `next`, `prev` | `next` | initial / repeated cycle direction |
 | `variant` | `two-line`, `bare` | `two-line` | visual style |
 | `mode` | `all`, `sameclass`, `sameworkspace` | `all` | which windows to list |
+| `modifier` | `alt`, `super`, `none` | `alt` | which key's release commits; `none` = picker, Enter/Escape only |
 | `hold` | `true`, `false` | `false` | stay open regardless of the Alt state (screenshots, demos, debugging) |
 
 `sameclass` lists only windows of the active window's app — bind it to

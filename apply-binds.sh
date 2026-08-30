@@ -74,7 +74,7 @@ combo_descs() {
       for (i = 1; i <= NF; i++) {
         line = $i; gsub(/^[ \t]+|[ \t\r]+$/, "", line)
         if (line == "modmask: " m) hasM = 1
-        if (line == "key: " k) hasK = 1
+        if (toupper(line) == "KEY: " toupper(k)) hasK = 1
         if (index(line, "description: ") == 1) descs[++n] = substr(line, 14)
       }
       if (hasM && hasK) for (i = 1; i <= n; i++) print descs[i]
@@ -110,6 +110,8 @@ $MODIFIER + TAB|Alt-Tab Switcher: next|{"dir":"next"$extra}|$force
 $MODIFIER + SHIFT + TAB|Alt-Tab Switcher: prev|{"dir":"prev"$extra}|$force
 $MODIFIER + GRAVE|Alt-Tab Switcher: same app|{"dir":"next","mode":"sameclass"$extra}|$force
 $MODIFIER + SHIFT + GRAVE|Alt-Tab Switcher: same app prev|{"dir":"prev","mode":"sameclass"$extra}|$force
+CTRL + $MODIFIER + GRAVE|Alt-Tab Switcher: this workspace|{"dir":"next","mode":"sameworkspace"$extra}|$force
+CTRL + $MODIFIER + SHIFT + GRAVE|Alt-Tab Switcher: this workspace prev|{"dir":"prev","mode":"sameworkspace"$extra}|$force
 EOF
 }
 

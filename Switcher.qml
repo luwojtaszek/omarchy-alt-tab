@@ -41,7 +41,8 @@ Item {
   property bool luaDispatchMode: false
   property bool revealed: false       // show-delay gate: a quick tap never renders
   property bool holdOpen: false       // demo/debug: stay open, ignore Alt release
-  property string modifier: "alt"     // key whose release commits: "alt" or "super"
+  property string modifier: "alt"     // key whose release commits: "alt", "super"
+                                      // or "none" (picker: Enter/Escape only)
 
   readonly property bool multiWorkspace: {
     var seen = {}
@@ -86,7 +87,8 @@ Item {
       // Which modifier the summoning bind holds; its release commits the
       // selection. Keep in sync with the bind (the bind writer does this
       // through alt-tab.json's "modifier").
-      modifier = payload.modifier === "super" ? "super" : "alt"
+      modifier = (payload.modifier === "super" || payload.modifier === "none")
+        ? payload.modifier : "alt"
       refClass = ""
       opened = true
       sticky = false
@@ -259,12 +261,16 @@ Item {
 
   // A tap shorter than this never shows the switcher at all (macOS-like);
   // the Alt release just commits the pending selection unseen.
+  readonly property bool autoCommit: modifier !== "none" && !holdOpen
+
   Timer {
     id: revealTimer
     // Tuned so a human quick tap (Alt released ~200ms after the press)
     // switches without the switcher ever appearing; the GTK predecessor
     // hit a similar effective threshold through process-startup latency.
-    interval: 250
+    // A picker (modifier "none") has nothing to commit on release, so it
+    // doesn't have to wait that window out.
+    interval: root.modifier === "none" ? 0 : 250
     onTriggered: root.revealed = true
   }
 
@@ -294,7 +300,7 @@ Item {
     interval: 250
     repeat: true
     triggeredOnStart: true
-    running: root.opened && !root.sticky && !root.holdOpen && root.altHeldHelper !== ""
+    running: root.opened && !root.sticky && root.autoCommit && root.altHeldHelper !== ""
     onTriggered: if (!altPollProc.running) altPollProc.running = true
   }
 
@@ -573,7 +579,7 @@ Item {
         // The release of a very quick tap can predate our keyboard focus
         // and is then lost; verify the physical Alt state the moment focus
         // arrives.
-        if (activeFocus && root.opened && !root.sticky && !root.holdOpen
+        if (activeFocus && root.opened && !root.sticky && root.autoCommit
             && root.altHeldHelper !== "" && !altPollProc.running)
           altPollProc.running = true
       }
@@ -626,7 +632,7 @@ Item {
         var isModifier = root.modifier === "super"
           ? (event.key === Qt.Key_Super_L || event.key === Qt.Key_Super_R || event.key === Qt.Key_Meta)
           : event.key === Qt.Key_Alt
-        if (isModifier && !root.sticky && !root.holdOpen) {
+        if (isModifier && !root.sticky && root.autoCommit) {
           if (root.listLoaded) root.activate()
           else root.pendingActivate = true
           event.accepted = true
