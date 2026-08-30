@@ -313,42 +313,62 @@ Item {
         // ── Prompt: ❯ caret + filter + count ──
         Item {
           width: parent.width
-          height: promptRow.height + (root.variant === "bare" ? 24 : 30)
+          height: promptGlyph.height + (root.variant === "bare" ? 24 : 30)
 
-          Row {
-            id: promptRow
+          Text {
+            id: promptGlyph
             anchors.verticalCenter: parent.verticalCenter
             x: root.variant === "bare" ? 16 : 18
-            spacing: 10
+            text: "❯"
+            color: root.themeAccent
+            font.family: root.fontFamily
+            font.pixelSize: 13
+            font.weight: Font.Bold
+          }
+
+          // The filter "input": typed text with the caret at the insertion
+          // point, and the placeholder as a separate layer that never moves
+          // the caret.
+          Item {
+            anchors.verticalCenter: parent.verticalCenter
+            anchors.left: promptGlyph.right
+            anchors.leftMargin: 10
+            anchors.right: parent.right
+            anchors.rightMargin: root.variant === "two-line" ? 70 : 16
+            height: Math.max(typedText.implicitHeight, 15)
+            clip: true
 
             Text {
-              text: "❯"
-              color: root.themeAccent
+              id: typedText
+              anchors.verticalCenter: parent.verticalCenter
+              text: root.filterText
+              color: root.themeFg
               font.family: root.fontFamily
               font.pixelSize: 13
-              font.weight: Font.Bold
             }
-            Text {
-              text: root.filterText !== "" ? root.filterText
-                : root.mode === "sameclass" && root.refClass !== ""
-                  ? "filter " + root.appDisplayName(root.refClass).toLowerCase() + " windows"
-                  : root.mode === "sameworkspace" ? "filter workspace windows"
-                  : "filter windows"
-              color: root.filterText === "" ? root.dim2 : root.themeFg
+            Text { // placeholder, offset past the resting caret
+              visible: root.filterText === ""
+              anchors.verticalCenter: parent.verticalCenter
+              x: 4
+              text: root.mode === "sameclass" && root.refClass !== ""
+                ? "filter " + root.appDisplayName(root.refClass).toLowerCase() + " windows"
+                : root.mode === "sameworkspace" ? "filter workspace windows"
+                : "filter windows"
+              color: root.dim2
               font.family: root.fontFamily
               font.pixelSize: 13
             }
             Rectangle { // caret
+              x: root.filterText === "" ? 0 : typedText.contentWidth + 2
               width: 1
               height: 15
               anchors.verticalCenter: parent.verticalCenter
               color: root.themeAccent
-              visible: root.sticky
               SequentialAnimation on opacity {
-                running: root.sticky
+                running: root.opened && root.revealed
                 loops: Animation.Infinite
-                NumberAnimation { to: 0; duration: 500 }
-                NumberAnimation { to: 1; duration: 500 }
+                NumberAnimation { to: 0; duration: 530 }
+                NumberAnimation { to: 1; duration: 530 }
               }
             }
           }
