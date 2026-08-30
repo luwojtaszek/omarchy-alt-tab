@@ -40,6 +40,7 @@ Item {
   property bool pendingActivate: false // Alt released before the list loaded
   property bool luaDispatchMode: false
   property bool revealed: false       // show-delay gate: a quick tap never renders
+  property bool holdOpen: false       // demo/debug: stay open, ignore Alt release
 
   readonly property bool multiWorkspace: {
     var seen = {}
@@ -78,6 +79,9 @@ Item {
       // repeated summons only cycle.
       mode = (payload.mode === "sameclass" || payload.mode === "sameworkspace")
         ? payload.mode : "all"
+      // {"hold": true} keeps the switcher up regardless of the Alt state —
+      // for screenshots, demos and debugging.
+      holdOpen = payload.hold === true
       refClass = ""
       opened = true
       sticky = false
@@ -285,7 +289,7 @@ Item {
     interval: 250
     repeat: true
     triggeredOnStart: true
-    running: root.opened && !root.sticky && root.altHeldHelper !== ""
+    running: root.opened && !root.sticky && !root.holdOpen && root.altHeldHelper !== ""
     onTriggered: if (!altPollProc.running) altPollProc.running = true
   }
 
@@ -317,6 +321,7 @@ Item {
       border.width: 1
 
       MouseArea { anchors.fill: parent; onClicked: {} }
+
 
       Column {
         id: content
@@ -563,7 +568,7 @@ Item {
         // The release of a very quick tap can predate our keyboard focus
         // and is then lost; verify the physical Alt state the moment focus
         // arrives.
-        if (activeFocus && root.opened && !root.sticky
+        if (activeFocus && root.opened && !root.sticky && !root.holdOpen
             && root.altHeldHelper !== "" && !altPollProc.running)
           altPollProc.running = true
       }
@@ -613,7 +618,7 @@ Item {
       // compositor delivers the release here — the primary activation path.
       // Typing latches sticky mode; then only Enter/Escape close.
       Keys.onReleased: function (event) {
-        if (event.key === Qt.Key_Alt && !root.sticky) {
+        if (event.key === Qt.Key_Alt && !root.sticky && !root.holdOpen) {
           if (root.listLoaded) root.activate()
           else root.pendingActivate = true
           event.accepted = true
