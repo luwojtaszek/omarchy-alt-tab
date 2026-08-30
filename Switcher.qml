@@ -183,16 +183,19 @@ Item {
     // to make the result stick.
     dispatchFocus(target.address)
     pendingFocusAddress = target.address
+    focusRetries = 0
     focusTimer.restart()
   }
 
+  property int focusRetries: 0
   Timer {
     id: focusTimer
-    interval: 100
+    interval: 50
+    repeat: true
     onTriggered: {
       var addr = root.pendingFocusAddress
-      if (addr === "") return
-      root.pendingFocusAddress = ""
+      if (addr === "" || root.focusRetries >= 3) { stop(); root.pendingFocusAddress = ""; return }
+      root.focusRetries++
       root.dispatchFocus(addr)
     }
   }
@@ -279,9 +282,10 @@ Item {
   }
   Timer {
     id: altPollTimer
-    interval: 350
+    interval: 250
     repeat: true
-    running: root.opened && root.revealed && !root.sticky && root.altHeldHelper !== ""
+    triggeredOnStart: true
+    running: root.opened && !root.sticky && root.altHeldHelper !== ""
     onTriggered: if (!altPollProc.running) altPollProc.running = true
   }
 
@@ -555,6 +559,14 @@ Item {
       id: keyCatcher
       anchors.fill: parent
       focus: true
+      onActiveFocusChanged: {
+        // The release of a very quick tap can predate our keyboard focus
+        // and is then lost; verify the physical Alt state the moment focus
+        // arrives.
+        if (activeFocus && root.opened && !root.sticky
+            && root.altHeldHelper !== "" && !altPollProc.running)
+          altPollProc.running = true
+      }
 
       Keys.priority: Keys.BeforeItem
       Keys.onPressed: function (event) {
