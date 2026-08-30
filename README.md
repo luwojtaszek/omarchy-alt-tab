@@ -57,6 +57,10 @@ hold-and-cycle switcher):
 { "modifier": "SUPER" }
 ```
 
+Naming another modifier is treated as a deliberate choice, so those combos
+are taken over even if Omarchy had something on them (stock `Super+Tab` is
+"Next workspace").
+
 **Your own combos** — replaces the defaults entirely. Each entry takes a
 `combo`, an optional `payload` (same keys as the summon payload below)
 and an optional `description`:

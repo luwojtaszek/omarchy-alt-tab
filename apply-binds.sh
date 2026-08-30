@@ -29,16 +29,18 @@ Reveal active window on top
 Focus on next monitor
 Focus on previous monitor'
 
-setting() { # $1=jq filter, $2=fallback
+setting() { # $1=key, $2=fallback. Reads booleans too: jq's `//` treats
+            # `false` as absent, which silently ignored {"autoBinds": false}.
   local v
   [[ -f $SETTINGS ]] && command -v jq >/dev/null || { echo "$2"; return; }
-  v=$(jq -r "$1 // empty" "$SETTINGS" 2>/dev/null) || v=""
-  [[ -n $v && $v != "null" ]] && echo "$v" || echo "$2"
+  v=$(jq -r --arg k "$1" 'if type == "object" and has($k) then (.[$k] | tostring) else "" end' \
+      "$SETTINGS" 2>/dev/null) || v=""
+  [[ -n $v && $v != null ]] && echo "$v" || echo "$2"
 }
 
-[[ $(setting '.autoBinds' true) == false ]] && { logger -t alt-tab-binds "autoBinds disabled"; exit 0; }
+[[ $(setting autoBinds true) == false ]] && { logger -t alt-tab-binds "autoBinds disabled"; exit 0; }
 
-MODIFIER=$(setting '.modifier' ALT); MODIFIER=${MODIFIER^^}
+MODIFIER=$(setting modifier ALT); MODIFIER=${MODIFIER^^}
 MOD_LOWER=${MODIFIER,,}
 
 BINDS=$(hyprctl binds 2>/dev/null) || exit 0
@@ -95,14 +97,19 @@ plan() {
     return
   fi
   # Defaults, on MODIFIER. Non-ALT modifiers are passed to the switcher too,
-  # so it watches the right key for the release that commits the selection.
-  local extra=""
-  [[ $MODIFIER != ALT ]] && extra=",\"modifier\":\"$MOD_LOWER\""
+  # so it watches the right key for the release that commits the selection,
+  # and count as an explicit request: asking for another modifier means
+  # taking over whatever Omarchy had there (e.g. Super+Tab = Next workspace).
+  local extra="" force=0
+  if [[ $MODIFIER != ALT ]]; then
+    extra=",\"modifier\":\"$MOD_LOWER\""
+    force=1
+  fi
   cat <<EOF
-$MODIFIER + TAB|Alt-Tab Switcher: next|{"dir":"next"$extra}|0
-$MODIFIER + SHIFT + TAB|Alt-Tab Switcher: prev|{"dir":"prev"$extra}|0
-$MODIFIER + GRAVE|Alt-Tab Switcher: same app|{"dir":"next","mode":"sameclass"$extra}|0
-$MODIFIER + SHIFT + GRAVE|Alt-Tab Switcher: same app prev|{"dir":"prev","mode":"sameclass"$extra}|0
+$MODIFIER + TAB|Alt-Tab Switcher: next|{"dir":"next"$extra}|$force
+$MODIFIER + SHIFT + TAB|Alt-Tab Switcher: prev|{"dir":"prev"$extra}|$force
+$MODIFIER + GRAVE|Alt-Tab Switcher: same app|{"dir":"next","mode":"sameclass"$extra}|$force
+$MODIFIER + SHIFT + GRAVE|Alt-Tab Switcher: same app prev|{"dir":"prev","mode":"sameclass"$extra}|$force
 EOF
 }
 
