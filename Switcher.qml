@@ -218,8 +218,47 @@ Item {
   }
 
   // ── Text helpers ───────────────────────────────────────────────────
+  // Chromium web apps (an omarchy-launch-webapp `--app=` window) report a
+  // class built from the URL and the profile: "chrome-app.slack.com__-Default",
+  // "chrome-discord.com__channels_@me-Default". No desktop entry carries that
+  // id, so heuristicLookup misses and the last-dot-segment rule below turns it
+  // into "Com Default" beside a placeholder icon. The host is the part that
+  // identifies the app, and it is also what sits in the launcher's Exec line --
+  // so match on that.
+  //
+  // The class is a string the window chooses for itself, so the match has to
+  // be narrow in both directions. The capture must look like a hostname (a
+  // dot and a TLD), or a window calling itself "chrome-a__-Default" would
+  // borrow the identity of the first launcher whose Exec happens to contain
+  // an "a". And it is compared against the "//host" boundary of the URL, not
+  // as a bare substring anywhere in the command line.
+  function webappEntry(cls) {
+    var match = String(cls || "").match(/^chrome-([a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,})(?:__|-Default)/)
+    if (!match) return null
+
+    var needle = "//" + match[1]
+    var entries = DesktopEntries.applications.values || []
+    for (var i = 0; i < entries.length; i++) {
+      var exec = String(entries[i].execString || entries[i].command || "")
+      if (exec.indexOf(needle) >= 0) return entries[i]
+    }
+
+    return null
+  }
+
+  function entryFor(cls) {
+    var entry = null
+    try { entry = DesktopEntries.heuristicLookup(cls) } catch (e) { entry = null }
+    if (!entry) { try { entry = DesktopEntries.byId(cls) } catch (e2) { entry = null } }
+    if (!entry) entry = webappEntry(cls)
+    return entry
+  }
+
   // "dev.zed.Zed" -> "Zed", "google-chrome" -> "Google Chrome"
   function appDisplayName(cls) {
+    var entry = entryFor(cls)
+    if (entry && entry.name) return String(entry.name)
+
     var segment = String(cls || "?").split(".").pop().replace(/[-_]/g, " ")
     return segment.replace(/(^|\s)\S/g, function (ch) { return ch.toUpperCase() })
   }
@@ -231,9 +270,7 @@ Item {
   }
 
   function iconFor(cls) {
-    var entry = null
-    try { entry = DesktopEntries.heuristicLookup(cls) } catch (e) { entry = null }
-    if (!entry) { try { entry = DesktopEntries.byId(cls) } catch (e2) { entry = null } }
+    var entry = entryFor(cls)
     var name = entry && entry.icon ? entry.icon : ""
     var path = name ? Quickshell.iconPath(name, true) : ""
     if (!path) path = Quickshell.iconPath(String(cls || "").toLowerCase(), true)
