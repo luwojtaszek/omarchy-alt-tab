@@ -346,6 +346,7 @@ Item {
           height: promptGlyph.height + (root.variant === "bare" ? 24 : 30)
 
           Text {
+            textFormat: Text.PlainText
             id: promptGlyph
             anchors.verticalCenter: parent.verticalCenter
             x: root.variant === "bare" ? 16 : 18
@@ -369,6 +370,7 @@ Item {
             clip: true
 
             Text {
+              textFormat: Text.PlainText
               id: typedText
               anchors.verticalCenter: parent.verticalCenter
               text: root.filterText
@@ -377,6 +379,7 @@ Item {
               font.pixelSize: 13
             }
             Text { // placeholder, offset past the resting caret
+              textFormat: Text.PlainText
               visible: root.filterText === ""
               anchors.verticalCenter: parent.verticalCenter
               x: 4
@@ -404,6 +407,7 @@ Item {
           }
 
           Text {
+            textFormat: Text.PlainText
             visible: root.variant === "two-line"
             anchors.right: parent.right
             anchors.rightMargin: 18
@@ -454,6 +458,7 @@ Item {
 
               // bare: jump number
               Text {
+                textFormat: Text.PlainText
                 visible: root.variant === "bare"
                 anchors.verticalCenter: parent.verticalCenter
                 text: row.index + 1
@@ -479,6 +484,7 @@ Item {
                 Row {
                   spacing: 12
                   Text {
+                    textFormat: Text.PlainText
                     text: root.appDisplayName(row.modelData.class)
                     color: root.themeFg
                     font.family: root.fontFamily
@@ -486,6 +492,7 @@ Item {
                     font.weight: Font.Medium
                   }
                   Text { // bare: inline title
+                    textFormat: Text.PlainText
                     visible: root.variant === "bare" && text !== ""
                     anchors.verticalCenter: parent.verticalCenter
                     text: root.rowTitle(row.modelData)
@@ -499,6 +506,7 @@ Item {
                 }
 
                 Text { // two-line: title on its own line
+                  textFormat: Text.PlainText
                   visible: root.variant === "two-line" && text !== ""
                   text: root.rowTitle(row.modelData)
                   color: root.dim
@@ -513,6 +521,7 @@ Item {
 
             // workspace number, only when it carries information
             Text {
+              textFormat: Text.PlainText
               visible: root.multiWorkspace
               anchors.right: parent.right
               anchors.rightMargin: root.variant === "bare" ? 16 : 18
@@ -551,6 +560,7 @@ Item {
                 required property var modelData
                 spacing: 5
                 Text {
+                  textFormat: Text.PlainText
                   text: parent.modelData[0]
                   color: root.dim
                   font.family: root.fontFamily
@@ -558,6 +568,7 @@ Item {
                   font.weight: Font.Medium
                 }
                 Text {
+                  textFormat: Text.PlainText
                   text: parent.modelData[1]
                   color: root.dim2
                   font.family: root.fontFamily
