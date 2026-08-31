@@ -3,12 +3,12 @@
 A macOS-style Alt-Tab window switcher, running inside the Omarchy shell
 (`omarchy-shell`) as a plugin — no extra processes, no extra dependencies.
 
-| Tokyo Night | Catppuccin Latte |
+| Tokyo Night | macOS Light |
 |---|---|
-| ![Alt-Tab Switcher on Tokyo Night](preview.png) | ![Alt-Tab Switcher on Catppuccin Latte](preview-light.png) |
+| ![Alt-Tab Switcher on Tokyo Night](preview.png) | ![Alt-Tab Switcher on macOS Light](preview-light.png) |
 
 The switcher takes its colors from whatever Omarchy theme is active — the
-shots above are the stock Tokyo Night and Catppuccin Latte, untouched.
+shots above are the stock Tokyo Night and macOS Light, untouched.
 
 - **MRU order** — windows listed by most-recently-used; the first `Alt+Tab`
   selects your previous window, exactly like macOS / Windows.
