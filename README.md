@@ -85,6 +85,12 @@ Naming another modifier is treated as a deliberate choice, so those combos
 are taken over even if Omarchy had something on them (stock `Super+Tab` is
 "Next workspace").
 
+If you have swapped left Alt and left Super to put Command under your thumb
+(`input:kb_options = altwin:swap_lalt_lwin`), `"modifier": "SUPER"` is what
+turns this into a real `Cmd+Tab`. The swap needs no further configuration
+here: xkb sits above evdev, so the optional quick-tap helper below is told
+which *physical* key to watch, not the logical one.
+
 **Your own combos** — replaces the defaults entirely. Each entry takes a
 `combo`, an optional `payload` (same keys as the summon payload below)
 and an optional `description`:
@@ -208,6 +214,9 @@ focused surface as an ordinary key event.
   the key goes up before the switcher has keyboard focus. Without it that rare
   case simply leaves the switcher open, and `Enter` or `Escape` closes it.
   Nothing else changes, and the helper is never installed or required.
+  Because it reads evdev it is blind to xkb, so `input:kb_options` is checked
+  once at startup and the physical counterpart is polled whenever left Alt and
+  left Super are swapped.
 - Typography follows the Omarchy brand font: JetBrains Mono. With only the
   stock `ttf-jetbrains-mono-nerd-basic` installed the Light/Medium weights
   render as Regular; install `ttf-jetbrains-mono` for the full effect.

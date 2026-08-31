@@ -286,9 +286,29 @@ Item {
     running: true
     stdout: StdioCollector { onStreamFinished: root.altHeldHelper = text.trim() }
   }
+
+  // The helper reads evdev, which sits BELOW xkb, so it only ever sees
+  // physical keys. Someone running the macOS modifier layout swaps left Alt
+  // and left Super (input:kb_options = altwin:swap_lalt_lwin) to put Cmd
+  // under the thumb: the key that then produces a logical Super still
+  // reports KEY_LEFTALT to evdev. Ask the helper for the physical key, or
+  // the poll reads UP while the modifier is held down and commits at once.
+  property bool lwinSwapped: false
+  readonly property string heldKey: !lwinSwapped ? modifier
+    : (modifier === "super" ? "alt" : modifier === "alt" ? "super" : modifier)
+  Process {
+    id: kbOptionsProbe
+    command: ["sh", "-c", "hyprctl getoption input:kb_options 2>/dev/null || true"]
+    running: true
+    stdout: StdioCollector {
+      onStreamFinished: root.lwinSwapped =
+        text.indexOf("swap_lalt_lwin") >= 0 || text.indexOf("swap_alt_win") >= 0
+    }
+  }
+
   Process {
     id: altPollProc
-    command: [root.altHeldHelper, root.modifier]
+    command: [root.altHeldHelper, root.heldKey]
     stdout: StdioCollector {
       onStreamFinished: {
         if (root.opened && !root.sticky && text.indexOf("UP") >= 0) root.activate()
