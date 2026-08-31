@@ -88,8 +88,8 @@ are taken over even if Omarchy had something on them (stock `Super+Tab` is
 If you have swapped left Alt and left Super to put Command under your thumb
 (`input:kb_options = altwin:swap_lalt_lwin`), `"modifier": "SUPER"` is what
 turns this into a real `Cmd+Tab`. The swap needs no further configuration
-here: xkb sits above evdev, so the optional quick-tap helper below is told
-which *physical* key to watch, not the logical one.
+here: the switcher only ever sees logical keys, which is what the swap
+already gives it.
 
 **Your own combos** — replaces the defaults entirely. Each entry takes a
 `combo`, an optional `payload` (same keys as the summon payload below)
@@ -206,17 +206,14 @@ focused surface as an ordinary key event.
   shell process with your user permissions, like every Omarchy shell plugin.
 - Uses only what Omarchy already ships: `hyprctl`, `jq` and `logger` (the
   last two solely for the keybinding service).
-- **Optional**, used only if it happens to be on your `PATH`:
-  `hyprfloat-alt-held` (from [hyprfloat](https://github.com/yz778/hyprfloat)),
-  a helper that reads the physical modifier state from evdev. When present,
-  it is polled while the switcher is open as a backup for a modifier release
-  that never reached the surface — which can happen on a very fast tap, where
-  the key goes up before the switcher has keyboard focus. Without it that rare
-  case simply leaves the switcher open, and `Enter` or `Escape` closes it.
-  Nothing else changes, and the helper is never installed or required.
-  Because it reads evdev it is blind to xkb, so `input:kb_options` is checked
-  once at startup and the physical counterpart is polled whenever left Alt and
-  left Super are swapped.
+- Committing on release needs no raw input access: the panel is mapped the
+  moment the switcher opens and takes exclusive keyboard focus, so the
+  modifier release arrives as an ordinary Qt key event. In the rare case
+  where a release lands in the few milliseconds before that focus is granted
+  it is simply lost, and the switcher stays up until `Enter` or `Escape`.
+  Reading evdev to close that gap would mean membership in the `input` group,
+  which lets any process of yours read every keystroke on the machine; no
+  window switcher is worth that.
 - Typography follows the Omarchy brand font: JetBrains Mono. With only the
   stock `ttf-jetbrains-mono-nerd-basic` installed the Light/Medium weights
   render as Regular; install `ttf-jetbrains-mono` for the full effect.

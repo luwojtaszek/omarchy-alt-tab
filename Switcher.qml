@@ -249,7 +249,7 @@ Item {
   }
 
   // Hyprland >= 0.56 in Lua-config mode rejects classic dispatcher syntax;
-  // probe once, the way hyprfloat does.
+  // probe once and remember which form to use.
   Process {
     id: dispatchProbe
     command: ["hyprctl", "dispatch", "hl.dsp.no_op()"]
@@ -272,56 +272,6 @@ Item {
     // doesn't have to wait that window out.
     interval: root.modifier === "none" ? 0 : 250
     onTriggered: root.revealed = true
-  }
-
-  // Backup activation path: the Qt key event covers the normal case, but a
-  // release that lands before this surface has keyboard focus is lost. When
-  // the optional hyprfloat-alt-held helper is installed (reads evdev key
-  // state), poll the physical Alt while open and commit once it reads UP.
-  // Without the helper the poll never arms and Esc/Enter remain the way out.
-  property string altHeldHelper: ""
-  Process {
-    id: helperProbe
-    command: ["sh", "-c", "command -v hyprfloat-alt-held || true"]
-    running: true
-    stdout: StdioCollector { onStreamFinished: root.altHeldHelper = text.trim() }
-  }
-
-  // The helper reads evdev, which sits BELOW xkb, so it only ever sees
-  // physical keys. Someone running the macOS modifier layout swaps left Alt
-  // and left Super (input:kb_options = altwin:swap_lalt_lwin) to put Cmd
-  // under the thumb: the key that then produces a logical Super still
-  // reports KEY_LEFTALT to evdev. Ask the helper for the physical key, or
-  // the poll reads UP while the modifier is held down and commits at once.
-  property bool lwinSwapped: false
-  readonly property string heldKey: !lwinSwapped ? modifier
-    : (modifier === "super" ? "alt" : modifier === "alt" ? "super" : modifier)
-  Process {
-    id: kbOptionsProbe
-    command: ["sh", "-c", "hyprctl getoption input:kb_options 2>/dev/null || true"]
-    running: true
-    stdout: StdioCollector {
-      onStreamFinished: root.lwinSwapped =
-        text.indexOf("swap_lalt_lwin") >= 0 || text.indexOf("swap_alt_win") >= 0
-    }
-  }
-
-  Process {
-    id: altPollProc
-    command: [root.altHeldHelper, root.heldKey]
-    stdout: StdioCollector {
-      onStreamFinished: {
-        if (root.opened && !root.sticky && text.indexOf("UP") >= 0) root.activate()
-      }
-    }
-  }
-  Timer {
-    id: altPollTimer
-    interval: 250
-    repeat: true
-    triggeredOnStart: true
-    running: root.opened && !root.sticky && root.autoCommit && root.altHeldHelper !== ""
-    onTriggered: if (!altPollProc.running) altPollProc.running = true
   }
 
   // ── UI ─────────────────────────────────────────────────────────────
@@ -606,15 +556,6 @@ Item {
       id: keyCatcher
       anchors.fill: parent
       focus: true
-      onActiveFocusChanged: {
-        // The release of a very quick tap can predate our keyboard focus
-        // and is then lost; verify the physical Alt state the moment focus
-        // arrives.
-        if (activeFocus && root.opened && !root.sticky && root.autoCommit
-            && root.altHeldHelper !== "" && !altPollProc.running)
-          altPollProc.running = true
-      }
-
       Keys.priority: Keys.BeforeItem
       Keys.onPressed: function (event) {
         if (event.key === Qt.Key_Escape) {
