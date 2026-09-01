@@ -335,6 +335,7 @@ Item {
       height: content.height + 2
       anchors.centerIn: parent
       color: root.panel
+      radius: Style.cornerRadius
       border.color: root.line
       border.width: 1
 

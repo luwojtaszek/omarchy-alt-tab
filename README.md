@@ -19,7 +19,8 @@ shots above are the stock Tokyo Night and macOS Light, untouched.
   latches into sticky mode (Enter focuses, Escape cancels).
 - **Theme-native** — the palette maps live onto your active Omarchy theme
   (background / foreground / accent / muted from `colors.toml`). Light and
-  dark themes both work; nothing is hard-coded.
+  dark themes both work; nothing is hard-coded. The card also follows
+  Omarchy/Hyprland corner rounding, including square stock themes.
 - **Two looks** — `two-line` (default: app icon, window title on its own
   line, key-hint footer) and `bare` (compact rows with `alt+<n>` jump
   numbers that focus a window directly).
