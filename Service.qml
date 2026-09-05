@@ -72,7 +72,13 @@ Item {
     onTriggered: root.apply()
   }
 
-  Component.onCompleted: applyTimer.restart()
+  Component.onCompleted: {
+    applyTimer.restart()
+    // The toplevel model's focusHistoryID snapshot is refreshed by the
+    // host only on connect and config reload; take a fresh one now so the
+    // seed for windows this service has not yet seen focused is current.
+    Hyprland.refreshToplevels()
+  }
   Component.onDestruction: {
     applyTimer.stop()
     watchdog.stop()
