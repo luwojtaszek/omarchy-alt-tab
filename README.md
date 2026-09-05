@@ -37,6 +37,11 @@ omarchy plugin add https://github.com/luwojtaszek/omarchy-alt-tab.git --enable
 omarchy plugin update io.github.luwojtaszek.alt-tab
 ```
 
+The shell keeps the QML it has already loaded until it restarts, so follow
+an update with `omarchy restart shell` (or log out and back in) to get the
+new version. The keybinding service reads its script fresh on every run
+either way.
+
 ## Remove
 
 ```bash
