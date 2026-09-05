@@ -1,10 +1,10 @@
 import Quickshell
-import Quickshell.Io
 import Quickshell.Wayland
 import Quickshell.Widgets
 import Quickshell.Hyprland
 import QtQuick
 import qs.Commons
+import "WindowModel.js" as WindowModel
 
 // macOS-style Alt-Tab window switcher, an Omarchy "menu" plugin.
 //
@@ -15,6 +15,12 @@ import qs.Commons
 // window. Typing latches the switcher into sticky mode (filter; Enter/Escape
 // only). Payload options: dir ("next"/"prev"), variant ("two-line"/"bare").
 //
+// The window list is the shell's own Hyprland model (Hyprland.toplevels):
+// no subprocess, no JSON to parse, nothing to buffer. Each window
+// contributes a small fixed set of fields, clipped, and never more than
+// maxWindows of them are kept (WindowModel.js). MRU order comes from the
+// focus history Service.qml tracks off the compositor's events.
+//
 // Visuals follow the Omarchy design exploration "app switcher A":
 // "two-line" (default) and "bare" (jump numbers, alt+<n> activates directly).
 // The palette is mapped live from the active Omarchy theme via the shell's
@@ -24,31 +30,41 @@ Item {
 
   property var shell: null
   property var manifest: null
+  property var service: null // the host hands over this plugin's Service.qml instance
   property bool opened: false
+
+  readonly property string pluginId: manifest && manifest.id ? String(manifest.id) : "io.github.luwojtaszek.alt-tab"
+
+  // ── Bounds ─────────────────────────────────────────────────────────
+  readonly property int maxWindows: 256 // windows kept from the compositor's model, MRU first
+  readonly property int maxRows: 20     // rows on screen at once; the list pages beyond that
+  readonly property int maxField: 256   // characters of title / class kept per window
+  readonly property int maxFilter: 128  // characters of typed filter
 
   // ── State ──────────────────────────────────────────────────────────
   property string variant: "two-line" // or "bare"
   property string mode: "all"         // "sameclass" (Cmd+` style) / "sameworkspace"
   property string refClass: ""        // class the sameclass filter locked onto
-  property var windows: []            // MRU-ordered clients (parsed hyprctl JSON)
-  property var visibleWindows: []     // windows matching the filter
+  property var windows: []            // MRU-ordered rows (WindowModel.rowFor)
+  property var visibleWindows: []     // rows matching the filter
+  property int viewStart: 0           // first row of the page on screen
+  readonly property var visibleRows: visibleWindows.slice(viewStart, viewStart + maxRows)
   property string filterText: ""
   property int selectedIndex: 0
   property bool sticky: false         // typing latched: only Enter/Escape close
-  property bool listLoaded: false
-  property int pendingDir: 0          // cycles requested before the list loads
-  property bool pendingActivate: false // Alt released before the list loaded
-  property bool luaDispatchMode: false
   property bool revealed: false       // show-delay gate: a quick tap never renders
   property bool holdOpen: false       // demo/debug: stay open, ignore Alt release
   property string modifier: "alt"     // key whose release commits: "alt", "super"
                                       // or "none" (picker: Enter/Escape only)
 
+  // Hyprland >= 0.56 in Lua-config mode rejects classic dispatcher syntax.
+  readonly property bool luaDispatchMode: Hyprland.usingLua === true
+
   readonly property bool multiWorkspace: {
     var seen = {}
     var count = 0
     for (var i = 0; i < windows.length; i++) {
-      var id = windows[i].workspace.id
+      var id = windows[i].workspaceId
       if (!seen[id]) { seen[id] = true; count++ }
     }
     return count > 1
@@ -72,6 +88,7 @@ Item {
   function open(payloadJson) {
     var payload = ({})
     try { payload = JSON.parse(payloadJson || "{}") } catch (e) { payload = ({}) }
+    if (!payload || typeof payload !== "object") payload = ({})
     if (payload.variant === "bare" || payload.variant === "two-line")
       variant = payload.variant
     var dir = payload.dir === "prev" ? -1 : 1
@@ -90,15 +107,16 @@ Item {
       modifier = (payload.modifier === "super" || payload.modifier === "none")
         ? payload.modifier : "alt"
       refClass = ""
-      opened = true
       sticky = false
       revealed = false
       filterText = ""
       selectedIndex = 0
-      listLoaded = false
-      pendingDir = dir
-      pendingActivate = false
-      clientsProc.running = true
+      viewStart = 0
+      loadWindows()
+      opened = true
+      // MRU[0] is the focused window; the first step lands on the
+      // previously used one, macOS-style.
+      cycle(dir)
       revealTimer.restart()
     } else {
       cycle(dir)
@@ -113,72 +131,84 @@ Item {
   function ping() { return "ok" }
 
   // ── MRU window list ────────────────────────────────────────────────
-  function loadClients(text) {
-    var clients = []
-    try { clients = JSON.parse(text) } catch (e) { clients = [] }
-    var list = []
-    for (var i = 0; i < clients.length; i++) {
-      var c = clients[i]
-      if (c.mapped && c.workspace && c.workspace.id > 0) list.push(c)
+  // The focus history lives in Service.qml. Look it up live first (the
+  // host re-creates services on plugin reloads), then fall back to the
+  // instance injected at load time; without either, the compositor's last
+  // focus snapshot still orders the list.
+  function historyRanker() {
+    var svc = null
+    if (shell && typeof shell.serviceFor === "function") {
+      try { svc = shell.serviceFor(pluginId) } catch (e) { svc = null }
     }
-    list.sort(function (a, b) { return a.focusHistoryID - b.focusHistoryID })
+    if (!svc) svc = service
+    if (!svc || typeof svc.historyRank !== "function") return null
+    return function (address) {
+      try { return Number(svc.historyRank(address)) } catch (e) { return -1 }
+    }
+  }
+
+  function loadWindows() {
+    var model = Hyprland.toplevels
+    var values = model && model.values ? model.values : []
+    var active = Hyprland.activeToplevel
+    var activeAddress = active && active.address ? String(active.address) : ""
+    var list = WindowModel.collect(values, activeAddress, historyRanker(), maxWindows, maxField)
     // sameclass / sameworkspace: narrow the list relative to the active
     // window (MRU[0]), like macOS Cmd+`.
     if (mode !== "all" && list.length > 0) {
       var ref = list[0]
-      refClass = ref.class || ""
-      list = list.filter(function (c) {
+      refClass = ref.class
+      list = list.filter(function (w) {
         return mode === "sameclass"
-          ? c.class === ref.class
-          : c.workspace.id === ref.workspace.id
+          ? w.class === ref.class
+          : w.workspaceId === ref.workspaceId
       })
     }
     windows = list
     applyFilter()
-    listLoaded = true
-    if (visibleWindows.length > 0 && pendingDir !== 0) {
-      // MRU[0] is the currently focused window; the first "next" lands on
-      // the previously used one, macOS-style. pendingDir accumulates any
-      // cycles that arrived before the list was ready.
-      var len = visibleWindows.length
-      selectedIndex = ((pendingDir % len) + len) % len
-    }
-    pendingDir = 0
-    if (pendingActivate) {
-      pendingActivate = false
-      activate()
-    }
   }
 
   function applyFilter() {
     var needle = filterText.toLowerCase()
     var list = []
     for (var i = 0; i < windows.length; i++) {
-      var c = windows[i]
-      var haystack = ((c.title || "") + " " + (c.class || "")).toLowerCase()
-      if (needle === "" || haystack.indexOf(needle) >= 0) list.push(c)
+      var w = windows[i]
+      var haystack = (w.title + " " + w.class).toLowerCase()
+      if (needle === "" || haystack.indexOf(needle) >= 0) list.push(w)
     }
     visibleWindows = list
-    if (selectedIndex >= list.length) selectedIndex = 0
+    select(selectedIndex < list.length ? selectedIndex : 0)
+  }
+
+  // Moves the selection and keeps it on the visible page.
+  function select(index) {
+    selectedIndex = index
+    var start = viewStart
+    if (index < start) start = index
+    else if (index >= start + maxRows) start = index - maxRows + 1
+    start = Math.min(start, visibleWindows.length - maxRows)
+    viewStart = Math.max(0, start)
   }
 
   function cycle(dir) {
-    if (!listLoaded) { pendingDir += dir; return }
     if (visibleWindows.length === 0) return
-    selectedIndex = (selectedIndex + dir + visibleWindows.length) % visibleWindows.length
+    select((selectedIndex + dir + visibleWindows.length) % visibleWindows.length)
   }
 
   // ── Activation ─────────────────────────────────────────────────────
   property string pendingFocusAddress: ""
 
   function dispatchFocus(addr) {
+    // The address is our own copy of a value Hyprland reported, and this
+    // is the one place it is spliced into a command: check its shape here.
+    if (!WindowModel.isAddress(addr)) return
     // Focus AND raise — in a floating-heavy layout focuswindow alone
     // leaves the window buried under others.
     if (luaDispatchMode) {
-      Hyprland.dispatch('hl.dsp.focus({ window = "address:' + addr + '" })')
+      Hyprland.dispatch('hl.dsp.focus({ window = "address:0x' + addr + '" })')
       Hyprland.dispatch("hl.dsp.window.bring_to_top()")
     } else {
-      Hyprland.dispatch("focuswindow address:" + addr)
+      Hyprland.dispatch("focuswindow address:0x" + addr)
       Hyprland.dispatch("alterzorder top")
     }
   }
@@ -213,7 +243,7 @@ Item {
 
   function dismiss() {
     // Route through the host so its open/closed bookkeeping stays correct.
-    if (shell && typeof shell.hide === "function") shell.hide(manifest ? manifest.id : "io.github.luwojtaszek.alt-tab")
+    if (shell && typeof shell.hide === "function") shell.hide(pluginId)
     else close()
   }
 
@@ -263,37 +293,22 @@ Item {
     return segment.replace(/(^|\s)\S/g, function (ch) { return ch.toUpperCase() })
   }
 
-  function rowTitle(c) {
-    var t = c.title || ""
-    if (t === c.class || t === appDisplayName(c.class)) return ""
+  function rowTitle(w) {
+    var t = w.title || ""
+    if (t === w.class || t === appDisplayName(w.class)) return ""
     return t
   }
 
   function iconFor(cls) {
     var entry = entryFor(cls)
-    var name = entry && entry.icon ? entry.icon : ""
+    var name = entry && entry.icon ? String(entry.icon) : ""
     var path = name ? Quickshell.iconPath(name, true) : ""
-    if (!path) path = Quickshell.iconPath(String(cls || "").toLowerCase(), true)
+    // The class is a name the window picked for itself: only a plain icon
+    // name may go to the theme lookup, never a path or a URL.
+    var plain = String(cls || "").toLowerCase()
+    if (!path && /^[a-z0-9._@+-]{1,128}$/.test(plain)) path = Quickshell.iconPath(plain, true)
     if (!path) path = Quickshell.iconPath("application-x-executable", true)
     return path
-  }
-
-  // ── Processes ──────────────────────────────────────────────────────
-  Process {
-    id: clientsProc
-    command: ["hyprctl", "-j", "clients"]
-    stdout: StdioCollector { onStreamFinished: root.loadClients(text) }
-  }
-
-  // Hyprland >= 0.56 in Lua-config mode rejects classic dispatcher syntax;
-  // probe once and remember which form to use.
-  Process {
-    id: dispatchProbe
-    command: ["hyprctl", "dispatch", "hl.dsp.no_op()"]
-    running: true
-    stdout: StdioCollector {
-      onStreamFinished: root.luaDispatchMode = text.indexOf("ok") === 0
-    }
   }
 
   // A tap shorter than this never shows the switcher at all (macOS-like);
@@ -329,7 +344,7 @@ Item {
 
     Rectangle {
       id: card
-      visible: root.revealed && root.listLoaded
+      visible: root.revealed
       readonly property int cardWidth: root.variant === "bare" ? 560 : 600
       width: cardWidth
       height: content.height + 2
@@ -434,17 +449,18 @@ Item {
           }
         }
 
-        // ── List ──
+        // ── List: one page of rows around the selection ──
         Item { width: 1; height: root.variant === "bare" ? 5 : 8 }
 
         Repeater {
-          model: root.visibleWindows
+          model: root.visibleRows
 
           delegate: Rectangle {
             id: row
             required property var modelData
             required property int index
-            readonly property bool selected: index === root.selectedIndex
+            readonly property int listIndex: root.viewStart + index
+            readonly property bool selected: listIndex === root.selectedIndex
 
             width: content.width
             height: root.variant === "bare" ? 30 : rowContent.height + 16
@@ -534,7 +550,7 @@ Item {
               anchors.right: parent.right
               anchors.rightMargin: root.variant === "bare" ? 16 : 18
               anchors.verticalCenter: parent.verticalCenter
-              text: row.modelData.workspace.id
+              text: row.modelData.workspaceId
               color: row.selected ? root.themeAccent : root.dim2
               font.family: root.fontFamily
               font.pixelSize: 11
@@ -542,7 +558,7 @@ Item {
 
             MouseArea {
               anchors.fill: parent
-              onClicked: { root.selectedIndex = row.index; root.activate() }
+              onClicked: { root.select(row.listIndex); root.activate() }
             }
           }
         }
@@ -612,10 +628,10 @@ Item {
           }
         } else if (root.variant === "bare" && !root.sticky
             && event.key >= Qt.Key_1 && event.key <= Qt.Key_9) {
-          // bare: alt+<n> activates the n-th visible row directly
+          // bare: alt+<n> activates the n-th row on screen directly
           var idx = event.key - Qt.Key_1
-          if (idx < root.visibleWindows.length) {
-            root.selectedIndex = idx
+          if (idx < root.visibleRows.length) {
+            root.select(root.viewStart + idx)
             root.activate()
           }
         } else {
@@ -625,7 +641,7 @@ Item {
           if ((!ch || ch.charCodeAt(0) < 32) && event.key >= Qt.Key_A && event.key <= Qt.Key_Z)
             ch = String.fromCharCode(97 + (event.key - Qt.Key_A))
           if (ch && ch.length === 1 && ch.charCodeAt(0) >= 32 && ch.charCodeAt(0) !== 127) {
-            root.filterText += ch
+            if (root.filterText.length < root.maxFilter) root.filterText += ch
             root.sticky = true
             root.applyFilter()
           } else {
@@ -643,8 +659,7 @@ Item {
           ? (event.key === Qt.Key_Super_L || event.key === Qt.Key_Super_R || event.key === Qt.Key_Meta)
           : event.key === Qt.Key_Alt
         if (isModifier && !root.sticky && root.autoCommit) {
-          if (root.listLoaded) root.activate()
-          else root.pendingActivate = true
+          root.activate()
           event.accepted = true
         }
       }

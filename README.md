@@ -76,7 +76,8 @@ Everything is steered from `~/.config/omarchy/alt-tab.json`.
 
 **Another modifier** — the whole default set on `Super` instead of `Alt`
 (the switcher then commits on the `Super` release, so this stays a
-hold-and-cycle switcher):
+hold-and-cycle switcher). `ALT` and `SUPER` are the two modifiers the
+switcher can watch for the release, so those are the two values accepted:
 
 ```json
 { "modifier": "SUPER" }
@@ -108,8 +109,7 @@ and an optional `description`:
 ```
 
 A combo you list here is always registered — asking for it in this file
-is your decision, so it takes over whatever was on that combo. Any
-modifier combination and any key Hyprland accepts will do.
+is your decision, so it takes over whatever was on that combo.
 
 One rule follows from how the switcher works: it commits the selection
 when you *release* the modifier, so the combo has to hold `Alt` or
@@ -127,6 +127,39 @@ stays up until `Enter` or `Escape`.
   ]
 }
 ```
+
+The file is checked strictly before anything is registered — these are
+the rules:
+
+- `combo`: modifiers first, then exactly one key, joined with `+` (spaces
+  optional, case doesn't matter). Modifiers: `SUPER` (also `WIN`, `LOGO`,
+  `MOD4`), `ALT` (`MOD1`), `CTRL` (`CONTROL`), `SHIFT`, `CAPS`, `MOD2`,
+  `MOD3`, `MOD5`. The key is an XKB keysym name made of letters, digits and
+  `_` — `TAB`, `GRAVE`, `F1`, `XF86AudioPlay` — or `code:<keycode>`. Mouse
+  buttons, `switch:` and `catchall` combos are not accepted.
+- `description`: 1 to 64 characters from letters, digits, spaces and
+  `. _ : / ( ) + -`. Defaults to `Alt-Tab Switcher: <combo>`.
+- `payload`: only the keys in the Options table below, with only the values
+  listed there.
+- At most 32 binds, no combo listed twice, no keys the plugin doesn't know.
+
+**One mistake anywhere in the file and nothing is registered** — not the
+defaults either, since the file may have been meant to turn them off. The
+reason lands in the journal:
+
+```bash
+journalctl -t alt-tab-binds
+```
+
+To see what the service would do without it touching anything:
+
+```bash
+bash ~/.config/omarchy/plugins/io.github.luwojtaszek.alt-tab/apply-binds.sh --dry-run
+```
+
+The file itself has to be a regular file that you own, at most 64 KiB, and
+not a symlink: the service refuses to follow one, so if a dotfiles manager
+puts a symlink there, use a copy or a hard link instead.
 
 **No automatic binds at all** — bind the switcher yourself in your
 Hyprland config:
@@ -160,9 +193,13 @@ bind = ALT SHIFT, Tab, exec, omarchy-shell shell summon io.github.luwojtaszek.al
 | `Alt+Shift+Tab` / `⇧Tab` / `↑` | previous window |
 | release `Alt` | focus selection (unless you typed a filter) |
 | type text | filter windows; switcher stays open |
-| `1`–`9` | focus the n-th row directly (`bare` variant) |
+| `1`–`9` | focus the n-th row on screen directly (`bare` variant) |
 | `↵` | focus selection |
 | `Esc` / click outside | cancel |
+
+The card shows up to 20 rows at a time; with more windows than that it
+pages along as you cycle, and the counter in the corner keeps the full
+tally. Typing a filter is the quick way to reach a window far down the list.
 
 ## Options
 
@@ -200,13 +237,24 @@ process. Repeated `Alt+Tab` presses arrive as repeated summons (the Hyprland
 bind consumes the key) and cycle the selection; the Alt release reaches the
 focused surface as an ordinary key event.
 
-- Window list: `hyprctl -j clients`, sorted by `focusHistoryID`.
-- Focusing: Hyprland `focuswindow` dispatch. Both classic and Lua-config
-  Hyprland dispatch syntax are supported (probed once at startup).
+- Window list: the shell's own Hyprland model (`Hyprland.toplevels`), the
+  same one the first-party bar and other plugins read. No subprocess is
+  started to open the switcher. MRU order comes from the focus history the
+  plugin's service keeps from the compositor's `activewindowv2` events,
+  seeded from the compositor's own focus history for windows it has not
+  seen focused yet.
+- Focusing: a Hyprland `focuswindow` dispatch. Both classic and Lua-config
+  Hyprland dispatch syntax are supported (the shell reports which one is
+  in use).
+- Keybindings: a bash script (`apply-binds.sh`) run by the service at
+  startup and after every config reload, wrapped in a 20-second
+  process-group deadline; inside it every `hyprctl`, `jq` and `logger` call
+  has its own 5-second deadline and a size cap on what is read back.
 - No daemons, no root, no packages to install. Runs unsandboxed inside the
   shell process with your user permissions, like every Omarchy shell plugin.
-- Uses only what Omarchy already ships: `hyprctl`, `jq` and `logger` (the
-  last two solely for the keybinding service).
+- Uses only what Omarchy already ships: `hyprctl`, `jq`, `logger` and
+  coreutils (`timeout`, `stat`, `head`) — all but `hyprctl` solely for the
+  keybinding service.
 - Committing on release needs no raw input access: the panel is mapped the
   moment the switcher opens and takes exclusive keyboard focus, so the
   modifier release arrives as an ordinary Qt key event. In the rare case
@@ -218,6 +266,42 @@ focused surface as an ordinary key event.
 - Typography follows the Omarchy brand font: JetBrains Mono. With only the
   stock `ttf-jetbrains-mono-nerd-basic` installed the Light/Medium weights
   render as Regular; install `ttf-jetbrains-mono` for the full effect.
+
+## Security notes
+
+What the plugin treats as untrusted, and what it does about it:
+
+- **Window titles and classes** are chosen by the application that owns the
+  window (a web page sets its browser window's title). Every `Text` element
+  renders as `Text.PlainText`, so markup in a title is just characters. From
+  each window the switcher copies exactly seven fields — address, class,
+  title, workspace id, active flag and two ordering keys — clipped to 256
+  characters, keeps at most 256 windows and renders at most 20 rows. The
+  class goes to the icon-theme lookup only if it is a plain icon name (no
+  path, no URL). The address is checked against `^[0-9a-f]{1,16}$` right
+  where it is spliced into the focus dispatch.
+- **The settings file** is read through a descriptor verified to be the
+  regular, user-owned file that was checked (symlinks refused; a swap
+  between check and open is detected by device:inode), capped at 64 KiB,
+  and parsed once by `jq` against a strict schema. Any violation means
+  nothing is registered. The three strings that reach Hyprland — combo,
+  description, summon payload — are matched against an allowlist again at
+  the point of interpolation into Lua source, the classic bind grammar and
+  the command the bind executes; the payload is rebuilt from validated enum
+  values rather than copied. No quote, backslash, bracket, comma, newline,
+  `$` or other shell metacharacter can get through.
+- **Subprocesses** run only from the keybinding service, always with an
+  argv array (never a shell string built from data), each under `timeout`
+  with output size caps, and the whole script under a process-group deadline
+  so a hung `hyprctl` cannot leave anything behind.
+- **The summon payload** is JSON from whoever can run `omarchy-shell` as
+  you; only the keys and values in the Options table are honored, everything
+  else is ignored.
+
+The tests cover these paths end to end — `bash tests/apply-binds.test.sh`
+drives the real script against a fake `hyprctl` with injection attempts,
+malformed files, symlinks, FIFOs, oversized inputs and a hung compositor;
+`node tests/window-model.test.js` covers the window-list logic.
 
 ## License
 
