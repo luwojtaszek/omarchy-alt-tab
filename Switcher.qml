@@ -75,7 +75,7 @@ Item {
   readonly property color themeFg: Color.foreground
   readonly property color themeAccent: Color.accent
   readonly property bool isLight: themeBg.hslLightness > 0.5
-  readonly property color panel: Qt.rgba(themeBg.r, themeBg.g, themeBg.b, isLight ? 0.95 : 0.93)
+  readonly property color panel: themeBg // opaque: nothing shows through the card
   readonly property color line: isLight ? Qt.darker(themeBg, 1.18) : Qt.lighter(themeBg, 1.7)
   readonly property color dim: Color.muted
   readonly property color dim2: Qt.rgba(themeFg.r, themeFg.g, themeFg.b, 0.35)
